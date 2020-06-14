@@ -11,10 +11,10 @@ import importlib.machinery
 import sys
 
 def line_prepender(filename, line):
-    with open(filename, 'r+') as f:
-        content = f.read()
-        f.seek(0, 0)
-        f.write(line.rstrip('\r\n') + '\n' + content)
+	with open(filename, 'r+') as f:
+		content = f.read()
+		f.seek(0, 0)
+		f.write(line.rstrip('\r\n') + '\n' + content)
 
 class ModelTrainer(object):
 	def __init__(self, checkpoint_path='./', verbose = False, epoch_save_freq = 1):
@@ -39,6 +39,9 @@ class ModelTrainer(object):
 		self.log_file = os.path.join(self.checkpoint_path, 'log.csv')
 		self.experiments_dir = os.path.join(self.checkpoint_path, 'experiments')
 		model_file_name = None
+		if torch.cuda.is_available():
+			model = model.cuda()
+		
 		for epoch in range(start_epoch, end_epoch+1):
 			print('Epoch {}/{}'.format(epoch, end_epoch))
 			print('-' * 10)
@@ -58,9 +61,10 @@ class ModelTrainer(object):
 
 				# Iterate over data.
 				for _, (inputs, labels) in enumerate(tqdm(dataloaders[phase])):
-
-					inputs = inputs.to(self.device)
-					labels = labels.to(self.device)
+					
+					if torch.cuda.is_available():
+						inputs = inputs.cuda()
+						labels = labels.cuda()
 
 					# zero the parameter gradients
 					optimizer.zero_grad()
@@ -300,13 +304,20 @@ class ModelTrainer(object):
 
 			shutil.copy(src=latest_model_file, dst="./temp_model.py")
 
-			from temp_model import model, criterion, optimizer
+			from temp_model import model, criterion, optimizer, scheduler
 
 			latest_epoch_file = os.path.join(self.checkpoint_path, 'experiments', str(experiment_number_new), "epoch_"+str(from_epoch - 1)+".pt")
 			checkpoint = torch.load(latest_epoch_file)
 			model.load_state_dict(checkpoint['model'])
 			optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-			scheduler = None
+
+			for state in optimizer.state.values():
+				for k, v in state.items():
+					if isinstance(v, torch.Tensor):
+						if torch.cuda.is_available():
+							state[k] = v.cuda()
+						else:
+							state[k] = v
 
 			self.train(experiment_number = experiment_number_new, dataloaders = dataloaders, model = model, criterion = criterion, optimizer = optimizer, scheduler = scheduler, start_epoch=from_epoch, end_epoch=till_epoch, continue_training=True)
 
@@ -331,12 +342,18 @@ class ModelTrainer(object):
 					print("Quitting")
 					return
 
-				from temp_model import model, criterion, optimizer
+				from temp_model import model, criterion, optimizer, scheduler
 				latest_epoch_file = os.path.join(self.checkpoint_path, 'experiments', str(experiment_number_new), "epoch_"+str(from_epoch - 1)+".pt")
 				checkpoint = torch.load(latest_epoch_file)
 				model.load_state_dict(checkpoint['model'])
 				optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-				scheduler = None
+				for state in optimizer.state.values():
+					for k, v in state.items():
+						if isinstance(v, torch.Tensor):
+							if torch.cuda.is_available():
+								state[k] = v.cuda()
+							else:
+								state[k] = v
 
 				self.train(experiment_number = experiment_number_new, dataloaders = dataloaders, model = model, criterion = criterion, optimizer = optimizer, scheduler = scheduler, start_epoch=from_epoch, end_epoch=till_epoch, continue_training=True)
 
@@ -348,11 +365,10 @@ class ModelTrainer(object):
 					print("Quitting")
 					return
 
-				from temp_model import model, criterion, optimizer
+				from temp_model import model, criterion, optimizer, scheduler
 				latest_epoch_file = os.path.join(self.checkpoint_path, 'experiments', str(experiment_number_new), "epoch_"+str(from_epoch - 1)+".pt")
 				checkpoint = torch.load(latest_epoch_file)
 				model.load_state_dict(checkpoint['model'])
-				scheduler = None
 
 				self.train(experiment_number = experiment_number_new, dataloaders = dataloaders, model = model, criterion = criterion, optimizer = optimizer, scheduler = scheduler, start_epoch=from_epoch, end_epoch=till_epoch, continue_training=True)
 
